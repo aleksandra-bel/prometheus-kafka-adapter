@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
@@ -71,6 +72,11 @@ func main() {
 
 	if err != nil {
 		logrus.WithError(err).Fatal("couldn't create kafka producer")
+	}
+
+	if influxdbURL != "" {
+		influxdbClient := NewInfluxDBClient(influxdbURL, influxdbToken, influxdbOrg, influxdbBucket)
+		go influxdbClient.StartPolling(context.Background(), producer, influxdbQuery, influxdbKafkaTopic, influxdbPollingInterval)
 	}
 
 	r := gin.New()
