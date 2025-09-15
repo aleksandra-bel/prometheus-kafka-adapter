@@ -74,8 +74,16 @@ func (c *InfluxDBClient) Query(ctx context.Context, query string) (*prompb.Write
 		labels := []prompb.Label{
 			{Name: "__name__", Value: name},
 		}
-		for key, val := range record.Tags() {
-			labels = append(labels, prompb.Label{Name: key, Value: val})
+		for key, val := range record.Values() {
+			// InfluxDB tags are always strings. Fields can be other types.
+			// We only want to add tags as labels.
+			// We can identify tags by checking if the value is a string.
+			if s, ok := val.(string); ok {
+				// Also, ignore standard flux columns that are not tags.
+				if key != "result" && key != "table" && key != "_start" && key != "_stop" && key != "_time" && key != "_measurement" && key != "_field" && key != "_value" {
+					labels = append(labels, prompb.Label{Name: key, Value: s})
+				}
+			}
 		}
 
 		// Create a unique key for the time series based on its labels.
