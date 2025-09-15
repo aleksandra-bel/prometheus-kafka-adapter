@@ -22,8 +22,7 @@ docker-compose up -d
     *   **Username/Password**: Your initial user credentials.
     *   **Organization Name**: You can use `my-org` (this is the default in `run-local.sh`).
     *   **Bucket Name**: You can use `my-bucket` (this is the default in `run-local.sh`).
-3.  After setup, navigate to **Load Data** > **API Tokens**.
-4.  Generate a new **All Access API Token**. Copy this token.
+3.  On setup an **Access Token** will be generated for you. Save it.
 
 **Step 3: Configure and Run the Adapter**
 1.  Open the `run-local.sh` file.
@@ -34,18 +33,49 @@ docker-compose up -d
     ./run-local.sh
     ```
 
-**Step 4: Generate Test Data in InfluxDB**
-While the adapter is running, you can add some data to InfluxDB to see if it gets polled.
-1.  In the InfluxDB UI, go to **Explore** and open the **Script Editor**.
-2.  Paste and run the following Flux script to write some sample data.
-    ```flux
-    import "influxdata/influxdb/sample"
-
-    sample.data(set: "airSensor")
-      |> to(bucket: "my-bucket", org: "my-org")
+**Step 4: Create a topic in Kafka**
+1. Create a dedicated topic in Kafka for storing InfluxDB metrics named `influxdb-metrics`. 
+    Run this command from a folder where `docker-compose.yaml` is situated:
+    ```sh
+    docker-compose exec kafka kafka-topics --create --topic influxdb-metrics --bootstrap-server kafka:19092 --partitions 1 --replication-factor 1
     ```
 
-**Step 5: Verify the Data in Kafka**
+**Step 5: Generate Test Data in InfluxDB**
+While the adapter is running, you can add some data to InfluxDB to see if it gets polled.
+1.  Import the initial data set:
+```curl
+curl -sS -X POST "http://localhost:8086/api/v2/query?org=my-org" \
+-H "Authorization: Token <your-influxdb-api-token>" \
+-H "Accept: application/csv" \
+-H "Content-Type: application/vnd.flux" \
+--data-binary '
+import "influxdata/influxdb/sample"
+
+sample.data(set: "airSensor")
+|> to(bucket: "my-bucket", org: "my-org")
+'
+```
+
+2.  As there is a polling interval in the code you will need to refresh the data when application is started. Use this curl as an example: 
+```curl
+curl -sS -X POST "http://localhost:8086/api/v2/query?org=my-org" \
+-H "Authorization: Token <your-influxdb-api-token>" \
+-H "Accept: application/csv" \
+-H "Content-Type: application/vnd.flux" \
+--data-binary '
+import "array"
+
+data = [
+{_time: now(), _measurement: "airSensors", _field: "temperature", _value: 85.1, host: "server01", sensor_id: "S-01"},
+{_time: now(), _measurement: "airSensors", _field: "humidity", _value: 45.4, host: "server01", sensor_id: "S-01"},
+]
+
+array.from(rows: data)
+|> to(bucket: "my-bucket", org: "my-org")
+'
+```
+
+**Step 6: Verify the Data in Kafka**
 You can use a command-line tool like `kcat` (previously `kafkacat`) to consume messages from your Kafka topic and verify that the data is arriving.
 ```sh
 kcat -b localhost:9092 -t influxdb-metrics -C -q
