@@ -56,16 +56,26 @@ func (c *InfluxDBClient) Query(ctx context.Context, query string) (*prompb.Write
 		record := result.Record()
 		name := record.Measurement()
 		timestamp := record.Time().UnixNano() / int64(time.Millisecond)
-		value := record.Value().(float64)
+
+		var value float64
+		switch v := record.Value().(type) {
+		case float64:
+			value = v
+		case int64:
+			value = float64(v)
+		default:
+			logrus.WithFields(logrus.Fields{
+				"measurement": name,
+				"type":        fmt.Sprintf("%T", v),
+			}).Warn("unsupported value type in influxdb record, skipping")
+			continue
+		}
 
 		labels := []prompb.Label{
 			{Name: "__name__", Value: name},
 		}
-		for key, val := range record.Values() {
-			if key[0] == '_' {
-				continue
-			}
-			labels = append(labels, prompb.Label{Name: key, Value: val.(string)})
+		for key, val := range record.Tags() {
+			labels = append(labels, prompb.Label{Name: key, Value: val})
 		}
 
 		// Create a unique key for the time series based on its labels.
