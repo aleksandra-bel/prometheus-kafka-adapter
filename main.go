@@ -76,7 +76,7 @@ func main() {
 
 	if influxdbURL != "" {
 		influxdbClient := NewInfluxDBClient(influxdbURL, influxdbToken, influxdbOrg, influxdbBucket)
-		go influxdbClient.StartPolling(context.Background(), producer, influxdbQuery, influxdbKafkaTopic, influxdbPollingInterval)
+		go influxdbClient.StartPolling(context.Background(), producer, influxdbMeasurements, influxdbKafkaTopic, influxdbPollingInterval)
 	}
 
 	r := gin.New()

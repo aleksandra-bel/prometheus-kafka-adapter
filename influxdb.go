@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
@@ -98,8 +99,25 @@ func (c *InfluxDBClient) Query(ctx context.Context, query string) (*prompb.Write
 	return writeRequest, nil
 }
 
+func generateFluxQuery(measurements, bucket string, interval time.Duration) string {
+	measurementList := strings.Split(measurements, ",")
+	measurementFilters := make([]string, len(measurementList))
+	for i, m := range measurementList {
+		measurementFilters[i] = fmt.Sprintf(`r._measurement == "%s"`, m)
+	}
+	filterStr := strings.Join(measurementFilters, " or ")
+
+	return fmt.Sprintf(`from(bucket: "%s") |> range(start: -%s) |> filter(fn: (r) => %s)`, bucket, interval, filterStr)
+}
+
 // StartPolling starts polling InfluxDB for data at a given interval.
-func (c *InfluxDBClient) StartPolling(ctx context.Context, producer *kafka.Producer, query, topic string, interval time.Duration) {
+func (c *InfluxDBClient) StartPolling(ctx context.Context, producer *kafka.Producer, measurements, topic string, interval time.Duration) {
+	if measurements == "" {
+		logrus.Info("no influxdb measurements configured, polling disabled")
+		return
+	}
+
+	query := generateFluxQuery(measurements, c.bucket, interval)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 

@@ -51,10 +51,10 @@ var (
 	influxdbURL    = ""
 	influxdbToken  = ""
 	influxdbBucket         = ""
-	influxdbOrg            = ""
-	influxdbQuery           = ""
+	influxdbOrg             = ""
 	influxdbPollingInterval = 10 * time.Second
 	influxdbKafkaTopic      = "influxdb"
+	influxdbMeasurements    = ""
 )
 
 func init() {
@@ -77,8 +77,9 @@ func init() {
 	if value := os.Getenv("INFLUXDB_ORG"); value != "" {
 		influxdbOrg = value
 	}
-	if value := os.Getenv("INFLUXDB_QUERY"); value != "" {
-		influxdbQuery = value
+
+	if value := os.Getenv("INFLUXDB_MEASUREMENTS"); value != "" {
+		influxdbMeasurements = value
 	}
 
 	if value := os.Getenv("INFLUXDB_POLLING_INTERVAL"); value != "" {
