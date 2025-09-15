@@ -85,14 +85,16 @@ func main() {
 
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 	r.GET("/healthz", func(c *gin.Context) { c.JSON(200, gin.H{"status": "UP"}) })
-	if basicauth {
-		authorized := r.Group("/", gin.BasicAuth(gin.Accounts{
-			basicauthUsername: basicauthPassword,
-		}))
-		authorized.POST("/receive", receiveHandler(producer, serializer))
-	} else {
-		r.POST("/receive", receiveHandler(producer, serializer))
-	}
+	/*
+		if basicauth {
+			authorized := r.Group("/", gin.BasicAuth(gin.Accounts{
+				basicauthUsername: basicauthPassword,
+			}))
+			authorized.POST("/receive", receiveHandler(producer, serializer))
+		} else {
+			r.POST("/receive", receiveHandler(producer, serializer))
+		}
+	*/
 
 	logrus.Fatal(r.Run())
 }
