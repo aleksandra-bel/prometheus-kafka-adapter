@@ -22,6 +22,7 @@ import (
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
+	"github.com/influxdata/influxdb-client-go/v2/api/query"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/sirupsen/logrus"
 )
@@ -43,7 +44,54 @@ func NewInfluxDBClient(url, token, org, bucket string) *InfluxDBClient {
 	}
 }
 
-// Query queries InfluxDB and returns the results.
+// processInfluxRecord transforms a single InfluxDB record into a Prometheus sample format
+// and aggregates it into the correct time series in the provided metrics map.
+func processInfluxRecord(record *query.FluxRecord, metrics map[string]*prompb.TimeSeries) {
+	measurement := record.Measurement()
+	field := record.Field()
+	name := fmt.Sprintf("%s_%s", measurement, field)
+	timestamp := record.Time().UnixNano() / int64(time.Millisecond)
+
+	var value float64
+	switch v := record.Value().(type) {
+	case float64:
+		value = v
+	case int64:
+		value = float64(v)
+	default:
+		logrus.WithFields(logrus.Fields{
+			"measurement": name,
+			"type":        fmt.Sprintf("%T", v),
+		}).Warn("unsupported value type in influxdb record, skipping")
+		return // Use return instead of continue
+	}
+
+	labels := []prompb.Label{
+		{Name: "__name__", Value: name},
+	}
+	for key, val := range record.Values() {
+		if s, ok := val.(string); ok {
+			if key != "result" && key != "table" && key != "_start" && key != "_stop" && key != "_time" && key != "_measurement" && key != "_field" && key != "_value" {
+				labels = append(labels, prompb.Label{Name: key, Value: s})
+			}
+		}
+	}
+
+	key := fmt.Sprintf("%v", labels)
+
+	if ts, ok := metrics[key]; ok {
+		ts.Samples = append(ts.Samples, prompb.Sample{Value: value, Timestamp: timestamp})
+	} else {
+		metrics[key] = &prompb.TimeSeries{
+			Labels: labels,
+			Samples: []prompb.Sample{
+				{Value: value, Timestamp: timestamp},
+			},
+		}
+	}
+}
+
+// Query queries InfluxDB and returns the results as a Prometheus WriteRequest.
 func (c *InfluxDBClient) Query(ctx context.Context, query string) (*prompb.WriteRequest, error) {
 	q := c.client.QueryAPI(c.org)
 	result, err := q.Query(ctx, query)
@@ -53,55 +101,7 @@ func (c *InfluxDBClient) Query(ctx context.Context, query string) (*prompb.Write
 
 	metrics := make(map[string]*prompb.TimeSeries)
 	for result.Next() {
-		record := result.Record()
-		measurement := record.Measurement()
-		field := record.Field()
-		name := fmt.Sprintf("%s_%s", measurement, field)
-		timestamp := record.Time().UnixNano() / int64(time.Millisecond)
-
-		var value float64
-		switch v := record.Value().(type) {
-		case float64:
-			value = v
-		case int64:
-			value = float64(v)
-		default:
-			logrus.WithFields(logrus.Fields{
-				"measurement": name,
-				"type":        fmt.Sprintf("%T", v),
-			}).Warn("unsupported value type in influxdb record, skipping")
-			continue
-		}
-
-		labels := []prompb.Label{
-			{Name: "__name__", Value: name},
-		}
-		for key, val := range record.Values() {
-			// InfluxDB tags are always strings. Fields can be other types.
-			// We only want to add tags as labels.
-			// We can identify tags by checking if the value is a string.
-			if s, ok := val.(string); ok {
-				// Also, ignore standard flux columns that are not tags.
-				if key != "result" && key != "table" && key != "_start" && key != "_stop" && key != "_time" && key != "_measurement" && key != "_field" && key != "_value" {
-					labels = append(labels, prompb.Label{Name: key, Value: s})
-				}
-			}
-		}
-
-		// Create a unique key for the time series based on its labels.
-		key := fmt.Sprintf("%v", labels)
-
-		if ts, ok := metrics[key]; ok {
-			ts.Samples = append(ts.Samples, prompb.Sample{Value: value, Timestamp: timestamp})
-		} else {
-			ts := &prompb.TimeSeries{
-				Labels: labels,
-				Samples: []prompb.Sample{
-					{Value: value, Timestamp: timestamp},
-				},
-			}
-			metrics[key] = ts
-		}
+		processInfluxRecord(result.Record(), metrics)
 	}
 
 	if result.Err() != nil {
@@ -111,7 +111,6 @@ func (c *InfluxDBClient) Query(ctx context.Context, query string) (*prompb.Write
 	writeRequest := &prompb.WriteRequest{
 		Timeseries: make([]prompb.TimeSeries, 0, len(metrics)),
 	}
-
 	for _, ts := range metrics {
 		writeRequest.Timeseries = append(writeRequest.Timeseries, *ts)
 	}
