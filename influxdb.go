@@ -54,7 +54,9 @@ func (c *InfluxDBClient) Query(ctx context.Context, query string) (*prompb.Write
 	metrics := make(map[string]*prompb.TimeSeries)
 	for result.Next() {
 		record := result.Record()
-		name := record.Measurement()
+		measurement := record.Measurement()
+		field := record.Field()
+		name := fmt.Sprintf("%s_%s", measurement, field)
 		timestamp := record.Time().UnixNano() / int64(time.Millisecond)
 
 		var value float64
