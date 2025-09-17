@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
@@ -73,20 +74,27 @@ func main() {
 		logrus.WithError(err).Fatal("couldn't create kafka producer")
 	}
 
+	if influxdbURL != "" {
+		influxdbClient := NewInfluxDBClient(influxdbURL, influxdbToken, influxdbOrg, influxdbBucket)
+		go influxdbClient.StartPolling(context.Background(), producer, influxdbMeasurements, influxdbKafkaTopic, influxdbPollingInterval)
+	}
+
 	r := gin.New()
 
 	r.Use(ginrus.Ginrus(logrus.StandardLogger(), time.RFC3339, true), gin.Recovery())
 
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 	r.GET("/healthz", func(c *gin.Context) { c.JSON(200, gin.H{"status": "UP"}) })
-	if basicauth {
-		authorized := r.Group("/", gin.BasicAuth(gin.Accounts{
-			basicauthUsername: basicauthPassword,
-		}))
-		authorized.POST("/receive", receiveHandler(producer, serializer))
-	} else {
-		r.POST("/receive", receiveHandler(producer, serializer))
-	}
+	/*
+		if basicauth {
+			authorized := r.Group("/", gin.BasicAuth(gin.Accounts{
+				basicauthUsername: basicauthPassword,
+			}))
+			authorized.POST("/receive", receiveHandler(producer, serializer))
+		} else {
+			r.POST("/receive", receiveHandler(producer, serializer))
+		}
+	*/
 
 	logrus.Fatal(r.Run())
 }

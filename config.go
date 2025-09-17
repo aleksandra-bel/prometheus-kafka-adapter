@@ -19,6 +19,7 @@ import (
 	"os"
 	"strings"
 	"text/template"
+	"time"
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -45,8 +46,15 @@ var (
 	kafkaSaslMechanism     = ""
 	kafkaSaslUsername      = ""
 	kafkaSaslPassword      = ""
-	serializer             Serializer
-	kafkaAcks              = "all"
+	serializer    Serializer
+	kafkaAcks     = "all"
+	influxdbURL    = ""
+	influxdbToken  = ""
+	influxdbBucket         = ""
+	influxdbOrg             = ""
+	influxdbPollingInterval = 10 * time.Second
+	influxdbKafkaTopic      = "influxdb"
+	influxdbMeasurements    = ""
 )
 
 func init() {
@@ -55,6 +63,35 @@ func init() {
 
 	if value := os.Getenv("LOG_LEVEL"); value != "" {
 		logrus.SetLevel(parseLogLevel(value))
+	}
+
+	if value := os.Getenv("INFLUXDB_URL"); value != "" {
+		influxdbURL = value
+	}
+	if value := os.Getenv("INFLUXDB_TOKEN"); value != "" {
+		influxdbToken = value
+	}
+	if value := os.Getenv("INFLUXDB_BUCKET"); value != "" {
+		influxdbBucket = value
+	}
+	if value := os.Getenv("INFLUXDB_ORG"); value != "" {
+		influxdbOrg = value
+	}
+
+	if value := os.Getenv("INFLUXDB_MEASUREMENTS"); value != "" {
+		influxdbMeasurements = value
+	}
+
+	if value := os.Getenv("INFLUXDB_POLLING_INTERVAL"); value != "" {
+		interval, err := time.ParseDuration(value)
+		if err != nil {
+			logrus.WithError(err).Fatalln("couldn't parse influxdb polling interval")
+		}
+		influxdbPollingInterval = interval
+	}
+
+	if value := os.Getenv("INFLUXDB_KAFKA_TOPIC"); value != "" {
+		influxdbKafkaTopic = value
 	}
 
 	if value := os.Getenv("KAFKA_BROKER_LIST"); value != "" {
